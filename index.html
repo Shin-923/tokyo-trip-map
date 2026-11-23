@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>도쿄 둘이서 · 큰 지도</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+<style>
+/* Companion page to the trip app: the app cannot load map tiles or call outside APIs, this page can.
+   Places arrive in the URL fragment (#d=...), which never leaves the phone. */
+:root{--bg:#f2f2f3;--paper:#fff;--ink:#18181b;--muted:#5f5f67;--line:#e2e2e6;--soft:#ededef;--accent:#18181b;--on:#fff;--me:#2563eb;
+  --f:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+@media (prefers-color-scheme: dark){:root{--bg:#0e0e10;--paper:#19191c;--ink:#f4f4f5;--muted:#a1a1aa;--line:#2a2a2f;--soft:#27272b;--accent:#f4f4f5;--on:#18181b;--me:#60a5fa}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+.leaflet-tile{filter:grayscale(1) contrast(.95) brightness(1.03)}
+@media (prefers-color-scheme: dark){.leaflet-tile{filter:grayscale(1) invert(1) brightness(.9) contrast(.9)}}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f);-webkit-font-smoothing:antialiased}
+#map{position:fixed;inset:0}
+.bar{position:fixed;left:0;right:0;top:0;z-index:1000;padding:max(10px,env(safe-area-inset-top)) 12px 8px;display:grid;gap:8px;pointer-events:none}
+.bar>*{pointer-events:auto}
+.top{display:flex;gap:8px;align-items:center}
+.pillbtn{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 14px;border-radius:99px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 14px var(--f);text-decoration:none;box-shadow:0 2px 10px rgb(0 0 0/.12);cursor:pointer;white-space:nowrap}
+.pillbtn[aria-pressed="true"]{background:var(--accent);color:var(--on);border-color:var(--accent)}
+.title{flex:1;min-width:0;font-weight:800;font-size:16px;text-shadow:0 1px 0 var(--paper)}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chips .pillbtn{height:34px;padding:0 12px;font-size:13px}
+.fab{position:fixed;right:12px;z-index:1000;width:48px;height:48px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--ink);display:grid;place-items:center;box-shadow:0 2px 12px rgb(0 0 0/.18);cursor:pointer}
+.fab svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#locate{bottom:calc(84px + env(safe-area-inset-bottom))}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:1000;background:var(--paper);border-radius:18px 18px 0 0;box-shadow:0 -4px 20px rgb(0 0 0/.14);padding:10px 14px calc(12px + env(safe-area-inset-bottom));display:grid;gap:8px;max-height:60vh;overflow:auto}
+.sheet::before{content:"";justify-self:center;width:40px;height:4px;border-radius:2px;background:var(--line)}
+.sum{display:flex;align-items:center;gap:8px;border:0;background:none;color:var(--ink);font:700 15px var(--f);padding:2px 2px 0;cursor:pointer;text-align:left}
+.sum span:first-child{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sum .chev{color:var(--muted);transition:transform .15s}
+.sheet:not(.collapsed) .sum .chev{transform:rotate(180deg)}
+.sheet.collapsed>:not(.sum){display:none}
+.sheet.collapsed{gap:4px}
+.w b{overflow-wrap:anywhere}
+.widgets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.w{background:var(--soft);border-radius:14px;padding:10px 12px;min-width:0}
+.w small{display:block;color:var(--muted);font-size:12px}
+.w b{display:block;font-size:20px;line-height:1.25;font-variant-numeric:tabular-nums}
+.w span{font-size:12px;color:var(--muted)}
+.days{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.day{flex:none;text-align:center;background:var(--soft);border-radius:12px;padding:6px 10px;font-size:12px;font-variant-numeric:tabular-nums}
+.day b{display:block;font-size:15px}
+.note{font-size:12px;color:var(--muted)}
+.copy{border:0;background:none;color:var(--ink);font:600 12px var(--f);text-decoration:underline;padding:0;cursor:pointer}
+/* markers: same tiles as the app */
+.mk{width:34px;height:34px;border-radius:11px;background:var(--paper);color:var(--ink);display:grid;place-items:center;box-shadow:0 1px 6px rgb(0 0 0/.25);position:relative}
+.mk svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mk i{position:absolute;right:-3px;bottom:-3px;width:11px;height:11px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--paper)}
+.mk.hotel{background:var(--accent);color:var(--on)}
+.mk.num{border-radius:50%;background:var(--accent);color:var(--on);font:800 14px var(--f)}
+.mk.dim{opacity:.45}
+.cl{width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--on);display:grid;place-items:center;font:800 14px var(--f);box-shadow:0 0 0 4px rgb(0 0 0/.12)}
+.me{width:18px;height:18px;border-radius:50%;background:var(--me);box-shadow:0 0 0 4px rgb(37 99 235/.25),0 0 0 2px #fff inset}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--paper);color:var(--ink)}
+.leaflet-popup-content{margin:12px 14px;font:14px/1.45 var(--f)}
+.pop b{display:block;font-size:15px}
+.pop small{color:var(--muted)}
+.pop .acts{display:flex;gap:6px;margin-top:8px}
+.pop a{flex:1;text-align:center;padding:7px 8px;border-radius:10px;background:var(--soft);color:var(--ink);text-decoration:none;font-weight:600;font-size:13px}
+.pop a.main{background:var(--accent);color:var(--on)}
+.leaflet-control-attribution{font-size:10px}
+.leaflet-bottom.leaflet-right{bottom:calc(70px + env(safe-area-inset-bottom))}
+.empty{position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;z-index:999;pointer-events:none}
+@media (prefers-color-scheme: dark){.leaflet-container{background:#0e0e10}}
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="도쿄 지도"></div>
+<div class="bar">
+  <div class="top"><a class="pillbtn" id="back" href="https://claude.ai/artifact/4xNq5j7VwpegKnkK6RD5XV#map">← 앱</a><div class="title">도쿄 큰 지도</div></div>
+  <div class="chips" id="chips" role="group" aria-label="보기"></div>
+</div>
+<button class="fab" id="locate" aria-label="내 위치"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg></button>
+<section class="sheet collapsed" id="sheet" aria-label="날씨와 환율">
+  <button class="sum" id="sum" aria-expanded="false"><span id="sumtxt">날씨·환율 불러오는 중</span><span class="chev">▴</span></button>
+  <div class="widgets">
+    <div class="w" id="wx"><small>도쿄 날씨 (지금)</small><b>…</b><span>불러오는 중</span></div>
+    <div class="w" id="fx"><small>환율</small><b>…</b><span>불러오는 중</span></div>
+  </div>
+  <div class="days" id="wxdays"></div>
+  <div class="note">지도 © OpenStreetMap 기여자. 날씨 Open-Meteo. 환율 Frankfurter(유럽중앙은행 기준, 하루 1회 갱신). 저장한 장소는 이 폰 안에서만 쓰이고 서버로 보내지 않습니다.</div>
+</section>
+<div class="empty" id="empty" hidden><div>앱의 지도 탭에서 <b>큰 지도</b> 버튼으로 열어 주세요.</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script>
+"use strict";
+const ICON = {
+  bowl: '<path d="M4 11h16a8 8 0 0 1-16 0z"/><path d="M8 8c.8-1.6 2.2-1.6 3 0M12 7c.8-1.6 2.2-1.6 3 0"/>',
+  fish: '<path d="M3 12c3.5-4.5 9.5-5 14 0-4.5 5-10.5 4.5-14 0z"/><path d="M17 12l4-3v6z"/>',
+  skewer: '<path d="M4 20 20 4"/><rect x="7" y="11" width="4" height="4" rx="1" transform="rotate(-45 9 13)"/><rect x="11" y="7" width="4" height="4" rx="1" transform="rotate(-45 13 9)"/>',
+  fork: '<path d="M7 3v7a2 2 0 0 0 2 2v9M5 3v5M9 3v5"/><path d="M16 3c-2 2-2.5 6 0 8v10"/>',
+  glass: '<path d="M7 3h10l-1.2 8.5a3.8 3.8 0 0 1-7.6 0z"/><path d="M12 15.5V21M9 21h6"/>',
+  cup: '<path d="M4 8h13v5a6.5 6.5 0 0 1-13 0z"/><path d="M17 9.5h1.5a2.5 2.5 0 0 1 0 5H17"/>',
+  tower: '<path d="M12 2 16.5 22h-9z"/><path d="M9.2 14h5.6M10.4 8.5h3.2"/>',
+  star: '<path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.5-4.1 6-.7z"/>',
+  bag: '<path d="M5 8h14l-1 13H6z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>',
+  bed: '<path d="M3 19V6M3 15h18v4M21 19v-5a3 3 0 0 0-3-3h-7v4"/><circle cx="7" cy="12" r="1.6"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.4"/>',
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $ = s => document.querySelector(s);
+
+// ---- data from the fragment: {p:[[id,name,lat,lng,kind,colour,icon,cat,q,days]], h:id, r:{day:[ids...]}, D:[[day,label]], a:"#map"} ----
+function readData(){
+  const m = location.hash.match(/[#&]d=([^&]+)/); if (!m) return null;
+  try { const b = m[1].replace(/-/g, "+").replace(/_/g, "/"); return JSON.parse(decodeURIComponent(escape(atob(b + "===".slice((b.length + 3) % 4))))); }
+  catch { return null; }
+}
+const D = readData();
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+const map = L.map("map", {zoomControl: false, attributionControl: true}).setView([35.683, 139.74], 12);
+// OSM standard tiles (CARTO basemaps now need a key). Greyscale by CSS to match the app's mono look.
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 기여자'}).addTo(map);
+if (D && D.a) $("#back").href = D.a;
+
+const places = D ? D.p.map(([id, name, lat, lng, kind, c, icon, cat, q, days]) => ({id, name, lat, lng, kind, c, icon, cat, q, days: days || []})) : [];
+const byId = Object.fromEntries(places.map(p => [p.id, p]));
+const gsearch = p => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.q || p.name)}`;
+const popup = p => `<div class="pop"><b>${esc(p.name)}</b><small>${esc(p.cat || "")}${p.days.length ? " · " + p.days.join(", ") + " 일정" : ""}</small>
+  <div class="acts"><a class="main" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=transit" target="_blank" rel="noopener">길찾기</a><a href="${gsearch(p)}" target="_blank" rel="noopener">구글맵</a></div></div>`;
+const tileIcon = (p, extra = "") => L.divIcon({className: "", iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -16],
+  html: `<div class="mk ${extra}" style="--c:${p.c || "transparent"}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[p.icon] || ICON.pin}</svg><i></i></div>`});
+
+// ---- views: all saved / food / sights / one day ----
+let view = (D && D.v) || "all", layer = null;
+const chipsEl = $("#chips");
+function chips(){
+  const opts = [["all", "저장한 곳 전부"], ["food", "먹을 곳"], ["visit", "가볼 곳"], ...((D && D.D) || []).map(([d, l]) => [d, l])];
+  chipsEl.innerHTML = opts.map(([k, l]) => `<button class="pillbtn" data-v="${k}" aria-pressed="${view === k}">${esc(l)}</button>`).join("");
+}
+chipsEl.addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (!b) return; view = b.dataset.v; chips(); draw(true); });
+function draw(fit){
+  if (layer) map.removeLayer(layer);
+  const route = D && D.r && D.r[view];
+  if (route) {
+    layer = L.layerGroup();
+    const pts = route.map(id => byId[id]).filter(Boolean);
+    if (pts.length > 1) L.polyline(pts.map(p => [p.lat, p.lng]), {color: dark ? "#f4f4f5" : "#18181b", weight: 3, dashArray: "6 6", opacity: .8}).addTo(layer);
+    const seen = new Set();
+    pts.forEach((p, n) => { if (seen.has(p.id)) return; seen.add(p.id);
+      L.marker([p.lat, p.lng], {icon: L.divIcon({className: "", iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14], html: `<div class="mk num">${n + 1}</div>`}), title: p.name})
+        .bindPopup(popup(p)).addTo(layer); });
+    layer.addTo(map);
+    if (fit && pts.length) map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(.25), {maxZoom: 16});
+    return;
+  }
+  layer = L.markerClusterGroup({showCoverageOnHover: false, maxClusterRadius: 44, spiderfyOnMaxZoom: true,
+    iconCreateFunction: c => L.divIcon({className: "", iconSize: [40, 40], html: `<div class="cl">${c.getChildCount()}</div>`})});
+  const list = places.filter(p => view === "all" || p.kind === view);
+  list.forEach(p => layer.addLayer(L.marker([p.lat, p.lng], {icon: tileIcon(p, D && p.id === D.h ? "hotel" : ""), title: p.name}).bindPopup(popup(p))));
+  layer.addTo(map);
+  if (fit && list.length) map.fitBounds(L.latLngBounds(list.filter(p => p.lat > 35.615 && p.lat < 35.765 && p.lng > 139.625 && p.lng < 139.80).map(p => [p.lat, p.lng])).pad(.1), {maxZoom: 15});
+}
+if (D) { chips(); draw(true); } else $("#empty").hidden = false;
+
+// ---- my location (works here, not inside the app) ----
+let meMarker = null, meCircle = null, watching = null;
+$("#locate").addEventListener("click", () => {
+  if (!navigator.geolocation) { alertBox("이 브라우저는 위치를 지원하지 않습니다."); return; }
+  if (meMarker) map.setView(meMarker.getLatLng(), Math.max(map.getZoom(), 16));
+  if (watching !== null) return;
+  watching = navigator.geolocation.watchPosition(pos => {
+    const ll = [pos.coords.latitude, pos.coords.longitude];
+    if (!meMarker) { meMarker = L.marker(ll, {icon: L.divIcon({className: "", iconSize: [18, 18], html: '<div class="me"></div>'}), zIndexOffset: 1000}).addTo(map);
+      meCircle = L.circle(ll, {radius: pos.coords.accuracy, color: "#2563eb", weight: 1, fillOpacity: .08}).addTo(map); map.setView(ll, 16); }
+    else { meMarker.setLatLng(ll); meCircle.setLatLng(ll).setRadius(pos.coords.accuracy); }
+  }, err => { watching = null; alertBox(err.code === 1 ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 위치를 허용해 주세요." : "현재 위치를 찾지 못했습니다."); }, {enableHighAccuracy: true, maximumAge: 10000});
+});
+function alertBox(msg){ const n = document.createElement("div"); n.className = "note"; n.style.cssText = "position:fixed;left:12px;right:12px;top:110px;z-index:1001;background:var(--paper);color:var(--ink);padding:10px 12px;border-radius:12px;box-shadow:0 2px 12px rgb(0 0 0/.2)"; n.textContent = msg; document.body.append(n); setTimeout(() => n.remove(), 4000); }
+
+$("#sum").addEventListener("click", () => { const sh = $("#sheet"), open = sh.classList.toggle("collapsed") === false; $("#sum").setAttribute("aria-expanded", open); });
+const sum = {wx: "", fx: ""}, setSum = () => { $("#sumtxt").textContent = [sum.wx, sum.fx].filter(Boolean).join("  ·  ") || "날씨·환율"; };
+// ---- live weather: Open-Meteo, Tokyo (Ginza) ----
+const WMO = c => c === 0 ? "맑음" : c <= 3 ? "구름" : c <= 48 ? "안개" : c <= 67 ? "비" : c <= 77 ? "눈" : c <= 82 ? "소나기" : c <= 86 ? "눈" : "뇌우";
+fetch("https://api.open-meteo.com/v1/forecast?latitude=35.67&longitude=139.76&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=16")
+  .then(r => r.json()).then(j => {
+    sum.wx = `도쿄 ${Math.round(j.current.temperature_2m)}° ${WMO(j.current.weather_code)}`; setSum();
+    $("#wx").innerHTML = `<small>도쿄 날씨 (지금)</small><b>${Math.round(j.current.temperature_2m)}° ${WMO(j.current.weather_code)}</b><span>${j.current.time.replace("T", " ")} 기준</span>`;
+    const trip = new Set(["2027-01-16", "2027-01-17", "2027-01-18", "2027-01-19"]);
+    const days = j.daily.time.map((t, i) => ({t, max: j.daily.temperature_2m_max[i], min: j.daily.temperature_2m_min[i], c: j.daily.weather_code[i], p: j.daily.precipitation_probability_max[i]}));
+    const shown = days.some(d => trip.has(d.t)) ? days.filter(d => trip.has(d.t)) : days.slice(0, 7);
+    $("#wxdays").innerHTML = shown.map(d => `<div class="day">${d.t.slice(5).replace("-", "/")}<b>${Math.round(d.max)}°/${Math.round(d.min)}°</b>${WMO(d.c)}${d.p != null ? ` ${d.p}%` : ""}</div>`).join("")
+      + (days.some(d => trip.has(d.t)) ? "" : `<div class="day" style="max-width:9em">여행 날짜 예보는<b>1/1쯤부터</b>16일 앞까지만 나옴</div>`);
+  }).catch(() => { $("#wx").innerHTML = `<small>도쿄 날씨</small><b>—</b><span>불러오지 못함</span>`; });
+
+// ---- live exchange rate: Frankfurter (ECB reference rate, updated once a working day) ----
+fetch("https://api.frankfurter.dev/v1/latest?base=JPY&symbols=KRW").then(r => r.json()).then(j => {
+  const v = j.rates.KRW * 100; sum.fx = `100엔 ${v.toLocaleString("ko-KR", {maximumFractionDigits: 1})}원`; setSum();
+  $("#fx").innerHTML = `<small>100엔 =</small><b>${v.toLocaleString("ko-KR", {maximumFractionDigits: 1})}원</b><span>${esc(j.date)} 기준 · <button class="copy" id="cp">숫자 복사</button></span>`;
+  $("#cp").onclick = () => navigator.clipboard && navigator.clipboard.writeText(v.toFixed(1)).then(() => alertBox("복사했습니다. 앱 가계부 탭의 환율 넣기에 붙여 넣으세요."));
+}).catch(() => { $("#fx").innerHTML = `<small>환율</small><b>—</b><span>불러오지 못함</span>`; });
+</script>
+</body>
+</html>
