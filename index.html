@@ -49,6 +49,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1
 .day{flex:none;text-align:center;background:var(--soft);border-radius:12px;padding:6px 10px;font-size:12px;font-variant-numeric:tabular-nums}
 .day b{display:block;font-size:15px}
 .note{font-size:12px;color:var(--muted)}
+#near h3{margin:2px 0 4px;font-size:14px}
+.nr{display:flex;gap:10px;align-items:center;padding:8px 2px;border-top:1px solid var(--line);cursor:pointer}
+.nr:first-of-type{border-top:0}
+.nr .mk{width:30px;height:30px;box-shadow:none;background:var(--soft)}
+.nr b{display:block;font-size:14px}.nr small{color:var(--muted);font-size:12px}
+.nr .d{margin-left:auto;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;font-weight:700;white-space:nowrap}
 .copy{border:0;background:none;color:var(--ink);font:600 12px var(--f);text-decoration:underline;padding:0;cursor:pointer}
 /* markers: same tiles as the app */
 .mk{width:34px;height:34px;border-radius:11px;background:var(--paper);color:var(--ink);display:grid;place-items:center;box-shadow:0 1px 6px rgb(0 0 0/.25);position:relative}
@@ -85,6 +91,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1
     <div class="w" id="wx"><small>도쿄 날씨 (지금)</small><b>…</b><span>불러오는 중</span></div>
     <div class="w" id="fx"><small>환율</small><b>…</b><span>불러오는 중</span></div>
   </div>
+  <div id="near"></div>
   <div class="days" id="wxdays"></div>
   <div class="note">지도 © OpenStreetMap 기여자. 날씨 Open-Meteo. 환율 Frankfurter(유럽중앙은행 기준, 하루 1회 갱신). 저장한 장소는 이 폰 안에서만 쓰이고 서버로 보내지 않습니다.</div>
 </section>
@@ -123,11 +130,13 @@ const map = L.map("map", {zoomControl: false, attributionControl: true}).setView
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 기여자'}).addTo(map);
 if (D && D.a) $("#back").href = D.a;
 
-const places = D ? D.p.map(([id, name, lat, lng, kind, c, icon, cat, q, days]) => ({id, name, lat, lng, kind, c, icon, cat, q, days: days || []})) : [];
+const places = D ? D.p.map(([id, name, lat, lng, kind, c, icon, cat, q, days, approx]) => ({id, name, lat, lng, kind, c, icon, cat, q, days: days || [], approx: !!approx})) : [];
 const byId = Object.fromEntries(places.map(p => [p.id, p]));
+// approx coordinates (typed by hand) would route to the wrong door: search by name instead
+const dirUrl = p => "https://www.google.com/maps/dir/?api=1&travelmode=transit&destination=" + (p.approx ? encodeURIComponent(p.q || p.name) : p.lat + "," + p.lng);
 const gsearch = p => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.q || p.name)}`;
 const popup = p => `<div class="pop"><b>${esc(p.name)}</b><small>${esc(p.cat || "")}${p.days.length ? " · " + p.days.join(", ") + " 일정" : ""}</small>
-  <div class="acts"><a class="main" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=transit" target="_blank" rel="noopener">길찾기</a><a href="${gsearch(p)}" target="_blank" rel="noopener">구글맵</a></div></div>`;
+  <div class="acts"><a class="main" href="${dirUrl(p)}" target="_blank" rel="noopener">길찾기</a><a href="${gsearch(p)}" target="_blank" rel="noopener">구글맵</a></div></div>`;
 const tileIcon = (p, extra = "") => L.divIcon({className: "", iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -16],
   html: `<div class="mk ${extra}" style="--c:${p.c || "transparent"}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[p.icon] || ICON.pin}</svg><i></i></div>`});
 
@@ -174,8 +183,21 @@ $("#locate").addEventListener("click", () => {
     if (!meMarker) { meMarker = L.marker(ll, {icon: L.divIcon({className: "", iconSize: [18, 18], html: '<div class="me"></div>'}), zIndexOffset: 1000}).addTo(map);
       meCircle = L.circle(ll, {radius: pos.coords.accuracy, color: "#2563eb", weight: 1, fillOpacity: .08}).addTo(map); map.setView(ll, 16); }
     else { meMarker.setLatLng(ll); meCircle.setLatLng(ll).setRadius(pos.coords.accuracy); }
+    nearMe(ll);
   }, err => { watching = null; alertBox(err.code === 1 ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 위치를 허용해 주세요." : "현재 위치를 찾지 못했습니다."); }, {enableHighAccuracy: true, maximumAge: 10000});
 });
+// what is close to me, nearest first (straight-line distance; walking minutes x1.3 detour at 80 m/min)
+const kmTo = (a, b) => { const r = Math.PI / 180, dl = (b[0] - a[0]) * r, dg = (b[1] - a[1]) * r, h = Math.sin(dl / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dg / 2) ** 2; return 12742 * Math.asin(Math.sqrt(h)); };
+let lastNear = 0;
+function nearMe(ll){
+  if (Date.now() - lastNear < 15000) return; lastNear = Date.now();
+  const list = places.map(p => [p, kmTo(ll, [p.lat, p.lng])]).sort((a, b) => a[1] - b[1]).slice(0, 6);
+  if (!list.length) return;
+  const far = list[0][1] > 30;
+  $("#near").innerHTML = `<h3>${far ? "도쿄에 가면 근처 저장한 곳이 여기 나옵니다" : "내 근처 저장한 곳"}</h3>${far ? "" : list.map(([p, d]) => `<div class="nr" data-id="${p.id}"><div class="mk" style="--c:${p.c}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[p.icon] || ICON.pin}</svg><i></i></div><div><b>${esc(p.name)}</b><small>${esc(p.cat || "")}</small></div><div class="d">${d < 1 ? Math.round(d * 1000) + "m" : d.toFixed(1) + "km"}<small style="display:block;font-weight:400">${d <= 2 ? "도보 " + Math.max(1, Math.round(d * 1300 / 80)) + "분" : ""}</small></div></div>`).join("")}`;
+  const sh = $("#sheet"); if (!far && sh.classList.contains("collapsed")) { sh.classList.remove("collapsed"); $("#sum").setAttribute("aria-expanded", true); }
+}
+$("#near").addEventListener("click", e => { const r = e.target.closest(".nr"); if (!r) return; const p = byId[r.dataset.id]; map.setView([p.lat, p.lng], 17); L.popup().setLatLng([p.lat, p.lng]).setContent(popup(p)).openOn(map); });
 function alertBox(msg){ const n = document.createElement("div"); n.className = "note"; n.style.cssText = "position:fixed;left:12px;right:12px;top:110px;z-index:1001;background:var(--paper);color:var(--ink);padding:10px 12px;border-radius:12px;box-shadow:0 2px 12px rgb(0 0 0/.2)"; n.textContent = msg; document.body.append(n); setTimeout(() => n.remove(), 4000); }
 
 $("#sum").addEventListener("click", () => { const sh = $("#sheet"), open = sh.classList.toggle("collapsed") === false; $("#sum").setAttribute("aria-expanded", open); });
