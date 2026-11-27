@@ -238,7 +238,7 @@ fetch("https://api.open-meteo.com/v1/forecast?latitude=35.67&longitude=139.76&cu
   .then(r => r.json()).then(j => {
     sum.wx = `도쿄 ${Math.round(j.current.temperature_2m)}° ${WMO(j.current.weather_code)}`; setSum();
     $("#wx").innerHTML = `<small>도쿄 날씨 (지금)</small><b>${Math.round(j.current.temperature_2m)}° ${WMO(j.current.weather_code)}</b><span>${j.current.time.replace("T", " ")} 기준</span>`;
-    const trip = new Set(["2027-01-16", "2027-01-17", "2027-01-18", "2027-01-19"]);
+    const trip = new Set(D && D.D ? D.D.map(x => x[0]) : ["2027-01-15", "2027-01-16", "2027-01-17", "2027-01-18", "2027-01-19"]);  // the app sends its trip days
     const days = j.daily.time.map((t, i) => ({t, max: j.daily.temperature_2m_max[i], min: j.daily.temperature_2m_min[i], c: j.daily.weather_code[i], p: j.daily.precipitation_probability_max[i]}));
     const shown = days.some(d => trip.has(d.t)) ? days.filter(d => trip.has(d.t)) : days.slice(0, 7);
     $("#wxdays").innerHTML = shown.map(d => `<div class="day">${d.t.slice(5).replace("-", "/")}<b>${Math.round(d.max)}°/${Math.round(d.min)}°</b>${WMO(d.c)}${d.p != null ? ` ${d.p}%` : ""}</div>`).join("")
